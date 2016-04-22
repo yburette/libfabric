@@ -1,0 +1,28 @@
+if HAVE_MXR
+_mxr_files = \
+	prov/mxr/src/mxr_attr.c \
+	prov/mxr/src/mxr_cm.c \
+	prov/mxr/src/mxr_domain.c \
+	prov/mxr/src/mxr_ep.c \
+	prov/mxr/src/mxr_eq.c \
+	prov/mxr/src/mxr_fabric.c \
+	prov/mxr/src/mxr_init.c \
+	prov/mxr/src/mxr_msg.c \
+	prov/mxr/src/mxr_rma.c \
+	prov/mxr/src/mxr.h
+
+if HAVE_MXR_DL
+pkglib_LTLIBRARIES += libmxr-fi.la
+libmxr_fi_la_SOURCES = $(_mxr_files) $(common_srcs)
+libmxr_fi_la_LIBADD = $(linkback)
+libmxr_fi_la_LDFLAGS = -module -avoid-version -shared -export-dynamic
+libmxr_fi_la_DEPENDENCIES = $(linkback)
+else !HAVE_MXR_DL
+src_libfabric_la_SOURCES += $(_mxr_files)
+endif !HAVE_MXR_DL
+
+#prov_install_man_pages += man/man7/fi_mxr.7
+
+endif HAVE_MXR
+
+#prov_dist_man_pages += man/man7/fi_mxr.7

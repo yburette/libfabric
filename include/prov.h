@@ -125,6 +125,17 @@ MLX_INI ;
 #  define MLX_INIT NULL
 #endif
 
+#if (HAVE_MXR) && (HAVE_MXR_DL)
+#  define MXR_INI FI_EXT_INI
+#  define MXR_INIT NULL
+#elif (HAVE_MXR)
+#  define MXR_INI INI_SIG(fi_mxr_ini)
+#  define MXR_INIT fi_mxr_ini()
+MXR_INI ;
+#else
+#  define MXR_INIT NULL
+#endif
+
 #if (HAVE_UDP) && (HAVE_UDP_DL)
 #  define UDP_INI FI_EXT_INI
 #  define UDP_INIT NULL

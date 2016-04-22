@@ -244,7 +244,8 @@ enum {
 	FI_PROTO_GNI,
 	FI_PROTO_RXM,
 	FI_PROTO_RXD,
-	FI_PROTO_MLX
+	FI_PROTO_MLX,
+    FI_PROTO_MXR
 };
 
 /* Mode bits */
