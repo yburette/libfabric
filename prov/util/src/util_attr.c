@@ -134,13 +134,13 @@ static int ofix_alter_layer_info(const struct fi_provider *prov,
 	if (!(*base_info = fi_allocinfo()))
 		return -FI_ENOMEM;
 
-	if (alter_layer_info(layer_info, *base_info))
-		goto err;
-
 	if (!layer_info)
 		return 0;
 
 	if (ofix_dup_addr(layer_info, *base_info))
+		goto err;
+
+	if (alter_layer_info(layer_info, *base_info))
 		goto err;
 
 	if (layer_info->domain_attr && layer_info->domain_attr->name &&
@@ -688,5 +688,6 @@ void ofi_alter_info(struct fi_info *info,
 		fi_alter_ep_attr(info->ep_attr, hints->ep_attr);
 		fi_alter_rx_attr(info->rx_attr, hints->rx_attr, info->caps);
 		fi_alter_tx_attr(info->tx_attr, hints->tx_attr, info->caps);
+        info->handle = hints->handle;
 	}
 }

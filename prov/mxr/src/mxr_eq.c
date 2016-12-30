@@ -36,6 +36,7 @@ static int mxr_eq_close(fid_t fid)
 {
     int ret;
     struct mxr_fid_eq *mxr_eq = container_of(fid, struct mxr_fid_eq, eq.fid);
+#if 0
 	struct slist_entry *entry;
 	struct mxr_conn_buf *req;
 
@@ -52,6 +53,7 @@ static int mxr_eq_close(fid_t fid)
         }
 		free(req);
 	}
+#endif
 
     if (mxr_eq->rd_cq) {
         ret = fi_close((fid_t)mxr_eq->rd_cq);
@@ -322,6 +324,12 @@ int mxr_eq_open(struct fid_fabric *fabric, struct fi_eq_attr *attr,
 
     /* rd_domain is missing at this point, so CQ is created
      * when EQ is bound to (P)EP. See mxr_pep_bind() and mxr_ep_bind(). */
+
+    mxr_eq->cq_attr.format = FI_CQ_FORMAT_TAGGED;
+    /* Save attributes into CQ attributes */
+    /*TODO: what about other fields? */
+    mxr_eq->cq_attr.size = attr->size;
+    mxr_eq->cq_attr.wait_obj = attr->wait_obj;
 
     mxr_eq->eq.fid.fclass = FI_CLASS_EQ;
     mxr_eq->eq.fid.context = context;

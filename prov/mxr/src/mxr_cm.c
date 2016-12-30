@@ -94,8 +94,59 @@ int prepare_cm_req(struct mxr_conn_buf *req, int type,
 
 int mxr_getname(fid_t fid, void *addr, size_t *addrlen)
 {
-    struct mxr_fid_ep *mxr_ep = (struct mxr_fid_ep*)fid;
-    return fi_getname((fid_t)mxr_ep->data_ep, addr, addrlen);
+    void *bound_addr;
+    size_t len;
+    struct mxr_fid_pep *mxr_pep;
+    struct mxr_fid_ep *mxr_ep;
+
+    switch (fid->fclass) {
+    case FI_CLASS_PEP:
+        mxr_pep = container_of(fid, struct mxr_fid_pep, pep.fid);
+        bound_addr = &mxr_pep->bound_addr;
+        len = mxr_pep->bound_addrlen;
+        break;
+    case FI_CLASS_EP:
+        mxr_ep = container_of(fid, struct mxr_fid_ep, ep.fid);
+        bound_addr = &mxr_ep->bound_addr;
+        len = mxr_ep->bound_addrlen;
+        break;
+    default:
+        return -FI_EINVAL;
+    }
+
+    memcpy(addr, bound_addr, len);
+    *addrlen = len;
+
+    return 0;
+}
+
+int mxr_setname(fid_t fid, void *addr, size_t addrlen)
+{
+    /*TODO: use container_of and switch on fid class */
+    void *bound_addr;
+    size_t *len;
+    struct mxr_fid_pep *mxr_pep;
+    struct mxr_fid_ep *mxr_ep;
+
+    switch (fid->fclass) {
+    case FI_CLASS_PEP:
+        mxr_pep = container_of(fid, struct mxr_fid_pep, pep.fid);
+        bound_addr = &mxr_pep->bound_addr;
+        len = &mxr_pep->bound_addrlen;
+        break;
+    case FI_CLASS_EP:
+        mxr_ep = container_of(fid, struct mxr_fid_ep, ep.fid);
+        bound_addr = &mxr_ep->bound_addr;
+        len = &mxr_ep->bound_addrlen;
+        break;
+    default:
+        return -FI_EINVAL;
+    }
+
+    memcpy(bound_addr, addr, addrlen);
+    *len = addrlen;
+
+    return 0;
 }
 
 int mxr_connect(struct fid_ep *ep, const void *addr, const void *param,
@@ -194,6 +245,13 @@ int mxr_listen(struct fid_pep *pep)
         /* TODO: What will happen once this is a list? */
         goto freebuf;
     }
+
+#if 0
+    ret = mxr_start_nameserver(mxr_pep);
+    if (ret) {
+        goto freebuf;
+    }
+#endif
 
     return 0;
 freebuf:
@@ -367,7 +425,7 @@ errout:
 
 struct fi_ops_cm mxr_ops_cm = {
     .size = sizeof(struct fi_ops_cm),
-    .setname = fi_no_setname,
+    .setname = mxr_setname,
     .getname = mxr_getname,
     .getpeer = fi_no_getpeer,
     .connect = mxr_connect,

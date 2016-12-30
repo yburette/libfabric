@@ -58,9 +58,10 @@ static int mxr_pep_bind(struct fid *fid, struct fid *bfid, uint64_t flags)
     mxr_pep->mxr_eq = mxr_eq;
     mxr_eq->mxr_pep = mxr_pep;
     
-    /* TODO: What if bfid is not EQ? */
+#if 0
     cq_attr.format = FI_CQ_FORMAT_TAGGED;
-    ret = fi_cq_open(mxr_pep->mxr_domain->rd_domain, &cq_attr,
+#endif
+    ret = fi_cq_open(mxr_pep->mxr_domain->rd_domain, &mxr_eq->cq_attr,
                      &mxr_eq->rd_cq, NULL);
     if (ret) {
         goto errout;
@@ -104,8 +105,10 @@ static int mxr_ep_bind(struct fid *fid, struct fid *bfid, uint64_t flags)
          * Server's EQ already set up in mxr_pep_bind.
          */
         if (!mxr_eq->rd_cq) {
+#if 0
             cq_attr.format = FI_CQ_FORMAT_TAGGED;
-            ret = fi_cq_open(mxr_ep->mxr_domain->rd_domain, &cq_attr,
+#endif
+            ret = fi_cq_open(mxr_ep->mxr_domain->rd_domain, &mxr_eq->cq_attr,
                              &mxr_eq->rd_cq, NULL);
             if (ret) {
                 goto errout;
@@ -220,15 +223,41 @@ static int mxr_pep_close(fid_t fid)
 {
     int ret;
     struct mxr_fid_pep *mxr_pep = container_of(fid, struct mxr_fid_pep, pep.fid);
+    struct mxr_fid_eq *mxr_eq = mxr_pep->mxr_eq;
+	struct slist_entry *entry;
+	struct mxr_conn_buf *req;
 
     FI_WARN(&mxr_prov, FI_LOG_FABRIC,
             "closing PEP: %p ctrl_ep %p rd_domain %p\n",
             mxr_pep, mxr_pep->ctrl_ep, mxr_pep->mxr_domain->rd_domain);
 
+    if (mxr_eq) {
+        while (!slist_empty(&mxr_eq->connreqs)) {
+            entry = slist_remove_head(&mxr_eq->connreqs);
+            req = container_of(entry, struct mxr_conn_buf, list_entry);
+            ret = fi_cancel((fid_t)mxr_pep->ctrl_ep, &req->ctx);
+            if (ret) {
+                FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                        "Couldn't cancel request\n", ret);
+                return ret;
+            }
+            free(req);
+        }
+
+        mxr_eq->mxr_pep = NULL;
+    }
+
     ret = fi_close((fid_t)mxr_pep->ctrl_ep);
     if (ret) {
         goto errout;
     }
+#if 0
+
+    ret = mxr_stop_nameserver(mxr_pep);
+    if (ret) {
+        goto errout;
+    }
+#endif
 
     free(mxr_pep);
 errout:
@@ -389,6 +418,24 @@ int mxr_ep_open(struct fid_domain *domain, struct fi_info *info,
         if (ret) {
             goto freeep;
         }
+    }
+
+    if (info->src_addr && info->src_addrlen > 0) {
+#if 0
+        switch (info->addr_format) {
+        case FI_SOCKADDR:
+        case FI_SOCKADDR_IN:
+        case FI_SOCKADDR_IN6:
+#endif
+            memcpy(&mxr_ep->bound_addr, info->src_addr, info->src_addrlen);
+            mxr_ep->bound_addrlen = info->src_addrlen;
+#if 0
+            break;
+        default:
+            FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                    "cannot handle addr_format: %d\n", info->addr_format);
+        };
+#endif
     }
 
     /* TODO: Shouldn't we pass the base info here instead? */

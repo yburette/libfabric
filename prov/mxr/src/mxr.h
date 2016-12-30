@@ -56,6 +56,8 @@
 #include <fi_signal.h>
 #include <fi_util.h>
 
+#include <pthread.h>
+
 #ifndef _MXR_H_
 #define _MXR_H_
 
@@ -95,6 +97,7 @@ struct mxr_fid_eq {
     struct fid_eq eq;
     struct fid_domain *rd_domain;
     struct fid_cq *rd_cq;
+    struct fi_cq_attr cq_attr;
     struct mxr_fid_pep *mxr_pep;
     struct mxr_fid_ep *mxr_ep;
     struct fi_eq_err_entry error;
@@ -104,6 +107,8 @@ struct mxr_fid_eq {
     struct slist connreqs;
 };
 
+struct mxr_thread_data;
+
 struct mxr_fid_pep {
     struct fid_pep pep;
     struct fid_ep *ctrl_ep;
@@ -112,6 +117,10 @@ struct mxr_fid_pep {
     struct mxr_fid_fabric *mxr_fabric;
     struct mxr_fid_domain *mxr_domain;
     struct mxr_fid_eq *mxr_eq;
+    struct mxr_thread_data *tdata;
+    pthread_t nameserver_thread;
+    struct sockaddr bound_addr;
+    size_t bound_addrlen;
 };
 
 struct mxr_fid_ep {
@@ -126,6 +135,8 @@ struct mxr_fid_ep {
     fi_addr_t peer_ctrl_addr;
     fi_addr_t peer_data_addr;
     int connected;
+    struct sockaddr bound_addr;
+    size_t bound_addrlen;
 };
 
 struct mxr_conn_hdr {
@@ -174,5 +185,9 @@ int	mxr_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
 int prepare_cm_req(struct mxr_conn_buf *req, int type,
         struct mxr_fid_ep *mxr_ep, const void *param, size_t paramlen,
         size_t *len);
+
+int mxr_start_nameserver(struct mxr_fid_pep *mxr_pep);
+
+int mxr_stop_nameserver(struct mxr_fid_pep *mxr_pep);
 
 #endif /* _MXR_H_ */
