@@ -137,6 +137,7 @@ struct mxr_fid_ep {
     int connected;
     struct sockaddr bound_addr;
     size_t bound_addrlen;
+    struct dlist_entry reqs;
 };
 
 struct mxr_conn_hdr {
@@ -159,6 +160,15 @@ struct mxr_conn_buf {
 
 #define TO_MXR_CONN_BUF(_ctx_ptr) \
     container_of(_ctx_ptr, struct mxr_conn_buf, ctx);
+
+struct mxr_request {
+    struct fi_context ctx;
+    struct dlist_entry list_entry;
+    void *user_ptr;
+};
+
+#define TO_MXR_REQ(_ctx_ptr) \
+    container_of(_ctx_ptr, struct mxr_request, ctx);
 
 int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
         void *context);
@@ -189,5 +199,7 @@ int prepare_cm_req(struct mxr_conn_buf *req, int type,
 int mxr_start_nameserver(struct mxr_fid_pep *mxr_pep);
 
 int mxr_stop_nameserver(struct mxr_fid_pep *mxr_pep);
+
+void print_address(const char *what, void *data);
 
 #endif /* _MXR_H_ */

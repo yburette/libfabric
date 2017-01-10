@@ -36,24 +36,6 @@ static int mxr_eq_close(fid_t fid)
 {
     int ret;
     struct mxr_fid_eq *mxr_eq = container_of(fid, struct mxr_fid_eq, eq.fid);
-#if 0
-	struct slist_entry *entry;
-	struct mxr_conn_buf *req;
-
-	while (!slist_empty(&mxr_eq->connreqs)) {
-		entry = slist_remove_head(&mxr_eq->connreqs);
-        req = container_of(entry, struct mxr_conn_buf, list_entry);
-        if (mxr_eq->mxr_pep) {
-            ret = fi_cancel((fid_t)mxr_eq->mxr_pep->ctrl_ep, &req->ctx);
-            if (ret) {
-                FI_WARN(&mxr_prov, FI_LOG_FABRIC,
-                        "Couldn't cancel request\n", ret);
-                return ret;
-            }
-        }
-		free(req);
-	}
-#endif
 
     if (mxr_eq->rd_cq) {
         ret = fi_close((fid_t)mxr_eq->rd_cq);
@@ -101,12 +83,16 @@ int process_connresp(struct mxr_conn_buf *buf, size_t datalen)
         return -FI_EOTHER;
     }
 
+    print_address("connresp peer_ctrl_addr:", name);
+
     name += namelen;
     count = fi_av_insert(mxr_ep->mxr_domain->rd_av, name, 1,
                          &mxr_ep->peer_data_addr, 0, NULL);
     if (1 != count) {
         return -FI_EOTHER;
     }
+
+    print_address("connresp peer_data_addr:", name);
 
     ret = prepare_cm_req(&ack, MXR_CONN_ACK, mxr_ep, &buf->data.hdr.cm_data,
                          buf->data.hdr.cm_datalen, &len);
@@ -179,6 +165,7 @@ static ssize_t mxr_eq_sread(struct fid_eq *eq, uint32_t *event, void *buf,
             case MXR_CONN_REQ:
                 FI_INFO(&mxr_prov, FI_LOG_FABRIC, "Got a MXR_CONN_REQ!\n");
                 nameslen = wc.len - sizeof(struct mxr_conn_hdr);
+                FI_INFO(&mxr_prov, FI_LOG_FABRIC, "nameslen: %ld\n", nameslen);
                 /* TODO: verify namelen is the same as ours (pep?) */
                 info = fi_dupinfo(mxr_eq->mxr_pep->info);
                 if (!info) {

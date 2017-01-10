@@ -68,6 +68,8 @@ int mxr_alter_layer_info(struct fi_info *layer_info, struct fi_info *base_info)
         layer_info->domain_attr->cq_data_size;
     base_info->domain_attr->resource_mgmt =
         layer_info->domain_attr->resource_mgmt;
+    base_info->domain_attr->mr_mode =
+        layer_info->domain_attr->mr_mode;
 
     return 0;
 }
@@ -144,8 +146,8 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
             aihints.ai_flags = AF_UNSPEC;
         }
 
-        ret = getaddrinfo(node, service, &aihints, &ai);
-        if (ret == EAI_SYSTEM) {
+        ret = getaddrinfo(node, (service ? service : "8484"), &aihints, &ai);
+        if (ret) {
             FI_WARN(&mxr_prov, FI_LOG_FABRIC, "getaddrinfo error: %s\n",
                     strerror(errno));
             return -FI_EOTHER;

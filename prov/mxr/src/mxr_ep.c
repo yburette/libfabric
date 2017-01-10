@@ -198,11 +198,26 @@ static int mxr_ep_close(fid_t fid)
 {
     int ret;
     struct mxr_fid_ep *mxr_ep = container_of(fid, struct mxr_fid_ep, ep.fid);
+    struct dlist_entry *entry;
+    struct mxr_request *req;
 
     FI_WARN(&mxr_prov, FI_LOG_FABRIC,
             "closing EP %p ctrl_ep %p data_ep %p mxr_domain %p rd_domain %p\n",
             mxr_ep, mxr_ep->ctrl_ep, mxr_ep->data_ep,
             mxr_ep->mxr_domain, mxr_ep->mxr_domain->rd_domain);
+
+    while(!dlist_empty(&mxr_ep->reqs)) {
+        entry = &mxr_ep->reqs;
+        req = container_of(entry, struct mxr_request, list_entry);
+        ret = fi_cancel((fid_t)mxr_ep->data_ep, &req->ctx);
+        if (ret) {
+            FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                    "Couldn't cancel request: %d\n", ret);
+            return ret;
+        }
+        dlist_remove(entry);
+        free(req);
+    }
 
     ret = fi_close((fid_t)mxr_ep->ctrl_ep);
     if (ret) {
@@ -333,6 +348,24 @@ int mxr_passive_ep(struct fid_fabric *fabric, struct fi_info *info,
         goto closerdep;
     }
 
+    if (info->src_addr && info->src_addrlen > 0) {
+#if 0
+        switch (info->addr_format) {
+        case FI_SOCKADDR:
+        case FI_SOCKADDR_IN:
+        case FI_SOCKADDR_IN6:
+#endif
+            memcpy(&mxr_pep->bound_addr, info->src_addr, info->src_addrlen);
+            mxr_pep->bound_addrlen = info->src_addrlen;
+#if 0
+            break;
+        default:
+            FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                    "cannot handle addr_format: %d\n", info->addr_format);
+        };
+#endif
+    }
+
     FI_WARN(&mxr_prov, FI_LOG_FABRIC,
             "new PEP: %p ctrl_ep %p rd_domain %p\n",
             mxr_pep, mxr_pep->ctrl_ep, mxr_domain->rd_domain);
@@ -384,6 +417,9 @@ static int parse_epnames(void *buf, size_t len, void **ctrl, void **data)
 
     memcpy(ctrl_name, buf, namelen);
     memcpy(data_name, buf+namelen, namelen);
+
+    print_address("parsed peer_ctrl_ep name", ctrl_name);
+    print_address("parsed peer_data_ep name", data_name);
 
     *ctrl = ctrl_name;
     *data = data_name;
@@ -475,6 +511,8 @@ int mxr_ep_open(struct fid_domain *domain, struct fi_info *info,
     mxr_ep->ep.atomic = NULL;
 
     mxr_ep->connected = 0;
+
+    dlist_init(&mxr_ep->reqs);
 
     *ep = &mxr_ep->ep;
 

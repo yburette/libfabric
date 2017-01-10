@@ -64,11 +64,15 @@ int prepare_cm_req(struct mxr_conn_buf *req, int type,
             return ret;
         }
 
+        print_address("my ctrl_ep name", name);
+
         name += len1;
         ret = fi_getname((fid_t)mxr_ep->data_ep, name, &len2);
         if (ret) {
             return ret;
         }
+
+        print_address("my data_ep name", name);
 
         assert(len1 == len2);
 
@@ -122,7 +126,6 @@ int mxr_getname(fid_t fid, void *addr, size_t *addrlen)
 
 int mxr_setname(fid_t fid, void *addr, size_t addrlen)
 {
-    /*TODO: use container_of and switch on fid class */
     void *bound_addr;
     size_t *len;
     struct mxr_fid_pep *mxr_pep;
@@ -170,6 +173,7 @@ int mxr_connect(struct fid_ep *ep, const void *addr, const void *param,
         return -FI_EINVAL;
     }
 
+    print_address("connect remote pep name", addr);
     count = fi_av_insert(mxr_ep->mxr_domain->rd_av, addr, 1,
                          &mxr_ep->peer_ctrl_addr, 0, NULL);
     if (1 != count) {
@@ -271,6 +275,9 @@ int mxr_accept(struct fid_ep *ep, const void *param, size_t paramlen)
     if (!mxr_ep->peer_ctrl_epname || !mxr_ep->peer_data_epname) {
         return -FI_EINVAL;
     }
+
+    print_address("accept peer_ctrl_ep name", mxr_ep->peer_ctrl_epname);
+    print_address("accept peer_data_ep name", mxr_ep->peer_data_epname);
 
     count = fi_av_insert(mxr_ep->mxr_domain->rd_av,
                          mxr_ep->peer_ctrl_epname,

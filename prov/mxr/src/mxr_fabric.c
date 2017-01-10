@@ -104,6 +104,7 @@ int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
         goto closefabric;
     }
     hints->fabric_attr->name = attr->name;
+    hints->domain_attr->mr_mode = mxr_info.domain_attr->mr_mode;
 
     ret = ofix_getinfo(mxr_prov.version, NULL, NULL, 0, &mxr_util_prov, hints,
                        mxr_alter_layer_info, mxr_alter_base_info, 1, &rd_info);

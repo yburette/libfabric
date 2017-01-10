@@ -10,6 +10,7 @@ _mxr_files = \
 	prov/mxr/src/mxr_msg.c \
 	prov/mxr/src/mxr_nameserver.c \
 	prov/mxr/src/mxr_rma.c \
+	prov/mxr/src/mxr_util.c \
 	prov/mxr/src/mxr.h
 
 if HAVE_MXR_DL

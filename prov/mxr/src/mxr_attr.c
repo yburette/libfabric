@@ -92,6 +92,8 @@ struct fi_domain_attr mxr_domain_attr = {
     .name = "mxr",
     .cq_data_size = 4,
     .resource_mgmt = FI_RM_ENABLED,
+    /*TODO: Had to set it here because of fi_check_domain_attr()... */
+    .mr_mode = FI_MR_BASIC,
 #if 0
     .threading = FI_THREAD_SAFE,
     .control_progress = FI_PROGRESS_AUTO,

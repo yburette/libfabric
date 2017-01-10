@@ -87,7 +87,9 @@ static ssize_t mxr_send(struct fid_ep *ep, const void *buf, size_t len,
     struct mxr_fid_ep *mxr_ep;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if ((dest_addr != FI_ADDR_UNSPEC) && (dest_addr != mxr_ep->peer_data_addr)) {
+    if ((dest_addr != 0) &&
+        (dest_addr != FI_ADDR_UNSPEC) &&
+        (dest_addr != mxr_ep->peer_data_addr)) {
         return -FI_EINVAL;
     }
     return fi_send(mxr_ep->data_ep, buf, len, desc, mxr_ep->peer_data_addr, context);
