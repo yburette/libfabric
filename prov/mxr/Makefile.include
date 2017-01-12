@@ -2,6 +2,7 @@ if HAVE_MXR
 _mxr_files = \
 	prov/mxr/src/mxr_attr.c \
 	prov/mxr/src/mxr_cm.c \
+	prov/mxr/src/mxr_cq.c \
 	prov/mxr/src/mxr_domain.c \
 	prov/mxr/src/mxr_ep.c \
 	prov/mxr/src/mxr_eq.c \

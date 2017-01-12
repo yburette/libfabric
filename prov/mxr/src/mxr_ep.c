@@ -85,6 +85,7 @@ static int mxr_ep_bind(struct fid *fid, struct fid *bfid, uint64_t flags)
     int ret;
     struct mxr_fid_ep* mxr_ep;
     struct mxr_fid_eq* mxr_eq;
+    struct mxr_fid_cq* mxr_cq;
     struct fi_cq_attr cq_attr;
 
     FI_WARN(&mxr_prov, FI_LOG_FABRIC,
@@ -124,7 +125,8 @@ static int mxr_ep_bind(struct fid *fid, struct fid *bfid, uint64_t flags)
         ret = 0;
         break;
     case FI_CLASS_CQ:
-        ret = fi_ep_bind(mxr_ep->data_ep, bfid, flags);
+        mxr_cq = container_of(bfid, struct mxr_fid_cq, cq.fid);
+        ret = fi_ep_bind(mxr_ep->data_ep, mxr_cq->rd_cq, flags);
         break;
     default:
         ret = -FI_EINVAL;
@@ -165,8 +167,35 @@ static int mxr_ep_control(struct fid *fid, int command, void *arg)
 
 static ssize_t mxr_ep_cancel(fid_t fid, void *context)
 {
+    ssize_t ret;
+    struct mxr_request *mxr_req;
+    struct dlist_entry *entry;
     struct mxr_fid_ep *mxr_ep = container_of(fid, struct mxr_fid_ep, ep.fid);
-	return fi_cancel((fid_t)mxr_ep->data_ep, context);
+
+    dlist_foreach(&mxr_ep->reqs, entry) {
+        mxr_req = container_of(entry, struct mxr_request, list_entry);
+        if (mxr_req->user_ptr == context) {
+            break;
+        }
+    }
+
+    if (!mxr_req) {
+        FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                "Unknown context: %p\n", context);
+        return -FI_EINVAL;
+    }
+
+	ret = fi_cancel((fid_t)mxr_ep->data_ep, &mxr_req->ctx);
+    if (ret) {
+        FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                "Cannot cancel: %p (fi_context %p)\n", context, &mxr_req->ctx);
+        return ret;
+    }
+
+    dlist_remove(entry);
+    free(mxr_req);
+
+    return ret;
 }
 
 static int mxr_ep_getopt(fid_t fid, int level, int optname,
@@ -207,7 +236,7 @@ static int mxr_ep_close(fid_t fid)
             mxr_ep->mxr_domain, mxr_ep->mxr_domain->rd_domain);
 
     while(!dlist_empty(&mxr_ep->reqs)) {
-        entry = &mxr_ep->reqs;
+        entry = mxr_ep->reqs.next;
         req = container_of(entry, struct mxr_request, list_entry);
         ret = fi_cancel((fid_t)mxr_ep->data_ep, &req->ctx);
         if (ret) {

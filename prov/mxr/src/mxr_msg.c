@@ -36,19 +36,25 @@ static ssize_t mxr_recv(struct fid_ep *ep, void *buf, size_t len, void *desc,
         fi_addr_t src_addr, void *context)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
     fi_addr_t addr = FI_ADDR_UNSPEC;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
     if (mxr_ep->connected) {
         addr = mxr_ep->peer_data_addr;
     }
-    return fi_recv(mxr_ep->data_ep, buf, len, desc, addr, context);
+
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = context;
+
+    return fi_recv(mxr_ep->data_ep, buf, len, desc, addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_recvmsg(struct fid_ep *ep, const struct fi_msg *msg,
                               uint64_t flags)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
     struct fi_msg rd_msg;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
@@ -56,13 +62,16 @@ static ssize_t mxr_recvmsg(struct fid_ep *ep, const struct fi_msg *msg,
         return -FI_EINVAL;
     }
 
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = msg->context;
+
     /* msg is const. Use proxy fi_msg to set remote addr */ 
     memset(&rd_msg, 0, sizeof rd_msg);
     rd_msg.msg_iov   = msg->msg_iov;
     rd_msg.desc      = msg->desc;
     rd_msg.iov_count = msg->iov_count;
     rd_msg.addr      = mxr_ep->peer_data_addr;
-    rd_msg.context   = msg->context;
+    rd_msg.context   = &mxr_req->ctx;
 
     return fi_recvmsg(mxr_ep->data_ep, msg, flags);
 }
@@ -72,19 +81,25 @@ static ssize_t mxr_recvv(struct fid_ep *ep, const struct iovec *iov,
 		       void *context)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
     if (!mxr_ep->connected) {
         return -FI_EINVAL;
     }
+
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = context;
+
     return fi_recvv(mxr_ep->data_ep, iov, desc, count,
-                    mxr_ep->peer_data_addr, context);
+                    mxr_ep->peer_data_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_send(struct fid_ep *ep, const void *buf, size_t len,
 		      void *desc, fi_addr_t dest_addr, void *context)
 {
-    struct mxr_fid_ep *mxr_ep;
+    struct mxr_fid_ep  *mxr_ep;
+    struct mxr_request *mxr_req;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
     if ((dest_addr != 0) &&
@@ -92,7 +107,11 @@ static ssize_t mxr_send(struct fid_ep *ep, const void *buf, size_t len,
         (dest_addr != mxr_ep->peer_data_addr)) {
         return -FI_EINVAL;
     }
-    return fi_send(mxr_ep->data_ep, buf, len, desc, mxr_ep->peer_data_addr, context);
+
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = context;
+
+    return fi_send(mxr_ep->data_ep, buf, len, desc, mxr_ep->peer_data_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_sendv(struct fid_ep *ep, const struct iovec *iov,
@@ -100,11 +119,16 @@ static ssize_t mxr_sendv(struct fid_ep *ep, const struct iovec *iov,
 		       void *context)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
     if (!mxr_ep->connected) {
         return -FI_EINVAL;
     }
+
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = context;
+
     return fi_sendv(mxr_ep->data_ep, iov, desc, count,
                     mxr_ep->peer_data_addr, context);
 }
@@ -113,6 +137,7 @@ ssize_t mxr_sendmsg(struct fid_ep *ep, const struct fi_msg *msg,
 			uint64_t flags)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
     struct fi_msg rd_msg;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
@@ -120,13 +145,16 @@ ssize_t mxr_sendmsg(struct fid_ep *ep, const struct fi_msg *msg,
         return -FI_EINVAL;
     }
 
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = msg->context;
+
     /* msg is const. Use proxy fi_msg to set remote addr */ 
     memset(&rd_msg, 0, sizeof rd_msg);
     rd_msg.msg_iov   = msg->msg_iov;
     rd_msg.desc      = msg->desc;
     rd_msg.iov_count = msg->iov_count;
     rd_msg.addr      = mxr_ep->peer_data_addr;
-    rd_msg.context   = msg->context;
+    rd_msg.context   = &mxr_req->ctx;
     
     return fi_sendmsg(mxr_ep->data_ep, &rd_msg, flags);
 }
@@ -136,13 +164,18 @@ static ssize_t mxr_senddata(struct fid_ep *ep, const void *buf, size_t len,
 			  void *context)
 {
     struct mxr_fid_ep *mxr_ep;
+    struct mxr_request *mxr_req;
 
     mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
     if (dest_addr && (dest_addr != mxr_ep->peer_data_addr)) {
         return -FI_EINVAL;
     }
+
+    NEW_MXR_REQ(mxr_ep, mxr_req);
+    mxr_req->user_ptr = context;
+
     return fi_senddata(mxr_ep->data_ep, buf, len, desc, data,
-                       mxr_ep->peer_data_addr, context);
+                       mxr_ep->peer_data_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_inject(struct fid_ep *ep, const void *buf, size_t len,

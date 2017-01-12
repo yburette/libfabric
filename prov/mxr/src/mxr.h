@@ -107,6 +107,12 @@ struct mxr_fid_eq {
     struct slist connreqs;
 };
 
+struct mxr_fid_cq {
+    struct fid_cq cq;
+    struct fid_cq *rd_cq;
+    enum fi_cq_format format;
+};
+
 struct mxr_thread_data;
 
 struct mxr_fid_pep {
@@ -170,11 +176,23 @@ struct mxr_request {
 #define TO_MXR_REQ(_ctx_ptr) \
     container_of(_ctx_ptr, struct mxr_request, ctx);
 
+#define NEW_MXR_REQ(_ep, _req) \
+    do { \
+        (_req) = calloc(1, sizeof *(_req)); \
+        if (!(_req)) { \
+            return -FI_ENOMEM; \
+        } \
+        dlist_insert_head(&(_req)->list_entry, &(_ep)->reqs); \
+    } while (0)
+
 int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
         void *context);
 
 int mxr_passive_ep(struct fid_fabric *fabric, struct fi_info *info,
         struct fid_pep **pep, void *context);
+
+int	mxr_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
+        struct fid_cq **cq, void *context);
 
 int mxr_eq_open(struct fid_fabric *fabric, struct fi_eq_attr *attr,
         struct fid_eq **eq, void *context);

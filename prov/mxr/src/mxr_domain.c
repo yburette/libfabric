@@ -32,13 +32,6 @@
 
 #include "mxr.h"
 
-int	mxr_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
-        struct fid_cq **cq, void *context)
-{
-    struct mxr_fid_domain *mxr_domain = (struct mxr_fid_domain*)domain;
-    return fi_cq_open(mxr_domain->rd_domain, attr, cq, context);
-}
-
 static struct fi_ops_domain mxr_domain_ops = {
 	.size = sizeof(struct fi_ops_domain),
 	.av_open = fi_no_av_open,
