@@ -252,6 +252,9 @@ static ssize_t mxr_eq_sread(struct fid_eq *eq, uint32_t *event, void *buf,
             }
             break;
         } else if (-FI_EAGAIN == ret) {
+            if (timeout == 0) {
+                return ret;
+            }
             continue;
         } else if (-FI_EAVAIL == ret) {
             /* TODO: Retrieve error? */
