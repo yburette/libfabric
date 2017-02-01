@@ -35,13 +35,42 @@
 
 #include "mxr.h"
 
+
+static int mxr_trywait(struct fid_fabric *fabric, struct fid **fids, int count)
+{
+    /*TODO: What should we do here? */
+    struct mxr_fid_fabric *mxr_fabric;
+    struct mxr_fid_cq *mxr_cq;
+	int i, ret;
+    struct fid *rd_fids[1];
+
+    mxr_fabric = container_of(fabric, struct mxr_fid_fabric, util_fabric.fabric_fid);
+	for (i = 0; i < count; i++) {
+		switch (fids[i]->fclass) {
+			case FI_CLASS_CQ:
+                mxr_cq = container_of(fids[i], struct mxr_fid_cq, cq);
+                rd_fids[0] = &mxr_cq->rd_cq->fid;
+                ret = fi_trywait(mxr_fabric->rd_fabric, rd_fids, 1);
+                if (ret) {
+                    return ret;
+                }
+                break;
+           default:
+                FI_WARN(&mxr_prov, FI_LOG_FABRIC, "Unknown fid class: %d\n",
+                        fids[i]->fclass);
+                return -FI_EINVAL;
+        }
+    }
+    return FI_SUCCESS;
+}
+
 static struct fi_ops_fabric mxr_fabric_ops = {
     .size = sizeof(struct fi_ops_fabric),
     .domain = mxr_domain_open,
     .passive_ep = mxr_passive_ep,
     .eq_open = mxr_eq_open,
     .wait_open = ofi_wait_fd_open,
-    .trywait = fi_no_trywait
+    .trywait = mxr_trywait
 };
 
 static int mxr_fabric_close(fid_t fid)
@@ -52,11 +81,22 @@ static int mxr_fabric_close(fid_t fid)
                                                      util_fabric.fabric_fid);
 
     FI_WARN(&mxr_prov, FI_LOG_FABRIC,
-            "closing mxr_fabric %p rd_fabric %p\n",
-            mxr_fabric, mxr_fabric->rd_fabric);
+            "closing mxr_fabric %p rd_fabric %p refcnt=%d\n",
+            mxr_fabric, mxr_fabric->rd_fabric, mxr_fabric->refcnt);
 
-    if (mxr_fabric->mxr_domain) {
-        fi_close((fid_t)mxr_fabric->mxr_domain);
+    if (mxr_fabric != mxr_active_fabric) {
+        FI_WARN(&mxr_prov, FI_LOG_FABRIC, "mxr_fabric != mxr_active_fabric\n");
+        return -FI_EINVAL;
+    }
+
+    mxr_fabric->refcnt--;
+
+    if (mxr_fabric->refcnt != 0) {
+        return 0;
+    }
+
+    if (mxr_fabric->domain) {
+        fi_close((fid_t)mxr_fabric->domain);
     }
 
     ret = fi_close((fid_t)mxr_fabric->rd_fabric);
@@ -87,6 +127,12 @@ int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
     struct fi_info *hints;
     struct fi_info *rd_info;
 
+    if (mxr_active_fabric) {
+        mxr_active_fabric->refcnt++;
+        *fabric = &mxr_active_fabric->util_fabric.fabric_fid;
+        return 0;
+    }
+
     mxr_fabric = calloc(1, sizeof(struct mxr_fid_fabric));
     if (!mxr_fabric) {
         return -FI_ENOMEM;
@@ -103,7 +149,7 @@ int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
         ret = -FI_ENOMEM;
         goto closefabric;
     }
-    hints->fabric_attr->name = attr->name;
+    hints->fabric_attr->name = strdup(attr->name);
     hints->domain_attr->mr_mode = mxr_info.domain_attr->mr_mode;
 
     ret = ofix_getinfo(mxr_prov.version, NULL, NULL, 0, &mxr_util_prov, hints,
@@ -117,8 +163,11 @@ int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
         goto freeinfo;
     }
 
+    mxr_cm_init();
+
     mxr_fabric->rd_info = rd_info;
-    mxr_fabric->mxr_domain = NULL; /* To be initialized by pep or domain */
+    mxr_fabric->domain = NULL; /* To be initialized by pep or domain */
+    mxr_fabric->refcnt = 1;
 
     FI_INFO(&mxr_prov, FI_LOG_FABRIC,
             "new mxr_fabric %p rd_fabric %p\n",
@@ -127,6 +176,8 @@ int mxr_fabric(struct fi_fabric_attr *attr, struct fid_fabric **fabric,
     *fabric = &mxr_fabric->util_fabric.fabric_fid;
     (*fabric)->fid.ops = &mxr_fabric_fi_ops;
     (*fabric)->ops = &mxr_fabric_ops;
+
+    mxr_active_fabric = mxr_fabric;
 
     fi_freeinfo(hints);
     return 0;

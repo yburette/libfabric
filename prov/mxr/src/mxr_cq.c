@@ -49,7 +49,8 @@ static int mxr_cq_close(fid_t fid)
 
 static int mxr_cq_control(struct fid *fid, int command, void *arg)
 {
-    return -FI_ENOSYS;
+    struct mxr_fid_cq *cq = container_of(fid, struct mxr_fid_cq, cq.fid);
+    return fi_control((fid_t)cq->rd_cq, command, arg);
 }
 
 struct fi_ops mxr_fi_ops_cq = {
@@ -99,8 +100,10 @@ static ssize_t mxr_cq_read(struct fid_cq *cq, void *buf, size_t count)
         if (entry->op_context) {
             mxr_req = TO_MXR_REQ(entry->op_context);
             entry->op_context = mxr_req->user_ptr;
+#if 0 /* TODO: this causes some issues, why? */
             dlist_remove(&mxr_req->list_entry);
             free(mxr_req);
+#endif
         }
         entry += entry_size;
     }

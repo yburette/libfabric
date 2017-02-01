@@ -46,6 +46,8 @@ struct mxr_thread_data {
     char name[FI_NAME_MAX];
 };
 
+#if 0
+
 static void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET) {
@@ -212,3 +214,4 @@ int mxr_stop_nameserver(struct mxr_fid_pep *mxr_pep)
 
     return 0;
 }
+#endif

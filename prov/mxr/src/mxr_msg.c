@@ -37,17 +37,14 @@ static ssize_t mxr_recv(struct fid_ep *ep, void *buf, size_t len, void *desc,
 {
     struct mxr_fid_ep *mxr_ep;
     struct mxr_request *mxr_req;
-    fi_addr_t addr = FI_ADDR_UNSPEC;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (mxr_ep->connected) {
-        addr = mxr_ep->peer_data_addr;
-    }
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
 
     NEW_MXR_REQ(mxr_ep, mxr_req);
     mxr_req->user_ptr = context;
 
-    return fi_recv(mxr_ep->data_ep, buf, len, desc, addr, &mxr_req->ctx);
+    return fi_recv(mxr_ep->rd_ep, buf, len, desc,
+                   mxr_ep->peer_fi_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_recvmsg(struct fid_ep *ep, const struct fi_msg *msg,
@@ -57,7 +54,7 @@ static ssize_t mxr_recvmsg(struct fid_ep *ep, const struct fi_msg *msg,
     struct mxr_request *mxr_req;
     struct fi_msg rd_msg;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
     if (!msg) {
         return -FI_EINVAL;
     }
@@ -70,10 +67,10 @@ static ssize_t mxr_recvmsg(struct fid_ep *ep, const struct fi_msg *msg,
     rd_msg.msg_iov   = msg->msg_iov;
     rd_msg.desc      = msg->desc;
     rd_msg.iov_count = msg->iov_count;
-    rd_msg.addr      = mxr_ep->peer_data_addr;
+    rd_msg.addr      = mxr_ep->peer_fi_addr;
     rd_msg.context   = &mxr_req->ctx;
 
-    return fi_recvmsg(mxr_ep->data_ep, msg, flags);
+    return fi_recvmsg(mxr_ep->rd_ep, msg, flags);
 }
 
 static ssize_t mxr_recvv(struct fid_ep *ep, const struct iovec *iov,
@@ -83,16 +80,13 @@ static ssize_t mxr_recvv(struct fid_ep *ep, const struct iovec *iov,
     struct mxr_fid_ep *mxr_ep;
     struct mxr_request *mxr_req;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (!mxr_ep->connected) {
-        return -FI_EINVAL;
-    }
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
 
     NEW_MXR_REQ(mxr_ep, mxr_req);
     mxr_req->user_ptr = context;
 
-    return fi_recvv(mxr_ep->data_ep, iov, desc, count,
-                    mxr_ep->peer_data_addr, &mxr_req->ctx);
+    return fi_recvv(mxr_ep->rd_ep, iov, desc, count,
+                    mxr_ep->peer_fi_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_send(struct fid_ep *ep, const void *buf, size_t len,
@@ -101,17 +95,18 @@ static ssize_t mxr_send(struct fid_ep *ep, const void *buf, size_t len,
     struct mxr_fid_ep  *mxr_ep;
     struct mxr_request *mxr_req;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
     if ((dest_addr != 0) &&
         (dest_addr != FI_ADDR_UNSPEC) &&
-        (dest_addr != mxr_ep->peer_data_addr)) {
+        (dest_addr != mxr_ep->peer_fi_addr)) {
         return -FI_EINVAL;
     }
 
     NEW_MXR_REQ(mxr_ep, mxr_req);
     mxr_req->user_ptr = context;
 
-    return fi_send(mxr_ep->data_ep, buf, len, desc, mxr_ep->peer_data_addr, &mxr_req->ctx);
+    return fi_send(mxr_ep->rd_ep, buf, len, desc,
+                   mxr_ep->peer_fi_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_sendv(struct fid_ep *ep, const struct iovec *iov,
@@ -121,16 +116,13 @@ static ssize_t mxr_sendv(struct fid_ep *ep, const struct iovec *iov,
     struct mxr_fid_ep *mxr_ep;
     struct mxr_request *mxr_req;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (!mxr_ep->connected) {
-        return -FI_EINVAL;
-    }
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
 
     NEW_MXR_REQ(mxr_ep, mxr_req);
     mxr_req->user_ptr = context;
 
-    return fi_sendv(mxr_ep->data_ep, iov, desc, count,
-                    mxr_ep->peer_data_addr, context);
+    return fi_sendv(mxr_ep->rd_ep, iov, desc, count,
+                    mxr_ep->peer_fi_addr, context);
 }
 
 ssize_t mxr_sendmsg(struct fid_ep *ep, const struct fi_msg *msg,
@@ -140,7 +132,7 @@ ssize_t mxr_sendmsg(struct fid_ep *ep, const struct fi_msg *msg,
     struct mxr_request *mxr_req;
     struct fi_msg rd_msg;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
     if (!msg) {
         return -FI_EINVAL;
     }
@@ -153,10 +145,10 @@ ssize_t mxr_sendmsg(struct fid_ep *ep, const struct fi_msg *msg,
     rd_msg.msg_iov   = msg->msg_iov;
     rd_msg.desc      = msg->desc;
     rd_msg.iov_count = msg->iov_count;
-    rd_msg.addr      = mxr_ep->peer_data_addr;
+    rd_msg.addr      = mxr_ep->peer_fi_addr;
     rd_msg.context   = &mxr_req->ctx;
     
-    return fi_sendmsg(mxr_ep->data_ep, &rd_msg, flags);
+    return fi_sendmsg(mxr_ep->rd_ep, &rd_msg, flags);
 }
 
 static ssize_t mxr_senddata(struct fid_ep *ep, const void *buf, size_t len,
@@ -166,16 +158,13 @@ static ssize_t mxr_senddata(struct fid_ep *ep, const void *buf, size_t len,
     struct mxr_fid_ep *mxr_ep;
     struct mxr_request *mxr_req;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (dest_addr && (dest_addr != mxr_ep->peer_data_addr)) {
-        return -FI_EINVAL;
-    }
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
 
     NEW_MXR_REQ(mxr_ep, mxr_req);
     mxr_req->user_ptr = context;
 
-    return fi_senddata(mxr_ep->data_ep, buf, len, desc, data,
-                       mxr_ep->peer_data_addr, &mxr_req->ctx);
+    return fi_senddata(mxr_ep->rd_ep, buf, len, desc, data,
+                       mxr_ep->peer_fi_addr, &mxr_req->ctx);
 }
 
 static ssize_t mxr_inject(struct fid_ep *ep, const void *buf, size_t len,
@@ -183,11 +172,8 @@ static ssize_t mxr_inject(struct fid_ep *ep, const void *buf, size_t len,
 {
     struct mxr_fid_ep *mxr_ep;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (dest_addr && (dest_addr != mxr_ep->peer_data_addr)) {
-        return -FI_EINVAL;
-    }
-    return fi_inject(mxr_ep->data_ep, buf, len, mxr_ep->peer_data_addr);
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
+    return fi_inject(mxr_ep->rd_ep, buf, len, mxr_ep->peer_fi_addr);
 }
 
 static ssize_t	mxr_injectdata(struct fid_ep *ep, const void *buf,
@@ -195,12 +181,9 @@ static ssize_t	mxr_injectdata(struct fid_ep *ep, const void *buf,
 {
     struct mxr_fid_ep *mxr_ep;
 
-    mxr_ep = container_of(ep, struct mxr_fid_ep, ep.fid);
-    if (dest_addr && (dest_addr != mxr_ep->peer_data_addr)) {
-        return -FI_EINVAL;
-    }
-    return fi_injectdata(mxr_ep->data_ep, buf, len, data,
-                         mxr_ep->peer_data_addr);
+    mxr_ep = container_of(ep, struct mxr_fid_ep, ep_fid.fid);
+    return fi_injectdata(mxr_ep->rd_ep, buf, len, data,
+                         mxr_ep->peer_fi_addr);
 }
 
 struct fi_ops_msg mxr_ops_msg = {

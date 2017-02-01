@@ -60,7 +60,11 @@ int mxr_alter_layer_info(struct fi_info *layer_info, struct fi_info *base_info)
     }
 
     base_info->caps = layer_info->caps & ~(mxr_info.caps);
+#if 1
     base_info->mode = 0;
+#else
+    base_info->mode = layer_info->mode;
+#endif
 #if 1
     base_info->addr_format = FI_FORMAT_UNSPEC;
 #endif
@@ -93,12 +97,33 @@ int mxr_alter_base_info(struct fi_info *base_info, struct fi_info *layer_info)
     layer_info->ep_attr->type = mxr_info.ep_attr->type;
     layer_info->ep_attr->protocol = mxr_info.ep_attr->protocol;
     layer_info->ep_attr->protocol_version = mxr_info.ep_attr->protocol_version;
-    *layer_info->domain_attr = *base_info->domain_attr;
+    /**layer_info->domain_attr = *base_info->domain_attr;*/
+    *layer_info->domain_attr = *mxr_info.domain_attr;
+#if 0
     /* Use our domain name */
     layer_info->domain_attr->name = strdup(mxr_info.domain_attr->name);
-    *layer_info->fabric_attr = *base_info->fabric_attr;
-    /* Return our provider name */
-    layer_info->fabric_attr->prov_name = mxr_info.fabric_attr->prov_name;
+    /* Use our fabric name */
+    layer_info->fabric_attr->name = strdup(mxr_info.fabric_attr->name);
+    layer_info->fabric_attr->prov_name = NULL;
+#endif
+
+    return 0;
+}
+
+static int copy_address(void **a, size_t *len, struct addrinfo *ai)
+{
+    if (*len < ai->ai_addrlen) {
+        free(*a);
+        *a = calloc(1, ai->ai_addrlen);
+        if (!*a) {
+            return -FI_ENOMEM;
+        }
+    } else {
+        memset(*a, 0, ai->ai_addrlen);
+    }
+
+    memcpy(*a, ai->ai_addr, ai->ai_addrlen);
+    *len = ai->ai_addrlen;
 
     return 0;
 }
@@ -107,10 +132,10 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
         uint64_t flags, struct fi_info *hints, struct fi_info **info)
 {
     int ret;
-    struct fi_info *tmp;
 	uint32_t requested_format;
     struct fi_info* p;
     struct addrinfo *ai, aihints;
+    struct sockaddr_in *sa;
 
     if (already_in_mxr_getinfo) {
         return -FI_ENODATA;
@@ -131,8 +156,8 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
 
     p = *info;
 
-    if (node && (flags & FI_SOURCE) && (requested_format != p->addr_format)) {
-        FI_INFO(&mxr_prov, FI_LOG_FABRIC, "converting src addr: %s\n", node);
+    if ((node || service) && (requested_format != p->addr_format)) {
+        FI_INFO(&mxr_prov, FI_LOG_FABRIC, "converting address: %s\n", node);
         memset(&aihints, 0, sizeof aihints);
         aihints.ai_flags = AI_PASSIVE;
         switch (requested_format) {
@@ -146,7 +171,7 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
             aihints.ai_flags = AF_UNSPEC;
         }
 
-        ret = getaddrinfo(node, (service ? service : "8484"), &aihints, &ai);
+        ret = getaddrinfo(node, (service ? service : NULL), &aihints, &ai);
         if (ret) {
             FI_WARN(&mxr_prov, FI_LOG_FABRIC, "getaddrinfo error: %s\n",
                     strerror(errno));
@@ -155,6 +180,35 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
 
         /* Replace address in outgoing info with new one */
         while (p) {
+            if (flags & FI_SOURCE) {
+                ret = copy_address(&p->src_addr, &p->src_addrlen, ai);
+            } else {
+                /* Register remote CM address */
+                sa = (struct sockaddr_in *)ai->ai_addr;
+                ret = mxr_cm_register_remote_cm(sa, p->dest_addr,
+                                                p->dest_addrlen);
+                if (ret) {
+                    FI_WARN(&mxr_prov, FI_LOG_FABRIC,
+                            "Cannot register remote CM: %d\n", ret);
+                    goto exit;
+                }
+
+                if (hints->src_addrlen > 0) {
+                    if (!p->src_addr) {
+                        p->src_addr = calloc(1, hints->src_addrlen);
+                        if (!p->src_addr) {
+                            ret = -FI_ENOMEM;
+                            goto exit;
+                        }
+                    }
+                    memcpy(p->src_addr, hints->src_addr, hints->src_addrlen);
+                    p->src_addrlen = hints->src_addrlen;
+                }
+
+                /* Replace dest_addr by sockaddr */
+                ret = copy_address(&p->dest_addr, &p->dest_addrlen, ai);
+            }
+#if 0
             if (p->src_addr) {
                if (p->src_addrlen < ai->ai_addrlen) {
                    free(p->src_addr);
@@ -173,6 +227,7 @@ static int mxr_getinfo(uint32_t version, const char *node, const char *service,
 
             memcpy(p->src_addr, ai->ai_addr, ai->ai_addrlen);
             p->src_addrlen = ai->ai_addrlen;
+#endif
             p->addr_format = requested_format;
 
             p = p->next;
@@ -187,7 +242,7 @@ exit:
 
 static void mxr_fini(void)
 {
-	/* yawn */
+    mxr_cm_fini();
 }
 
 struct fi_provider mxr_prov = {
@@ -201,5 +256,7 @@ struct fi_provider mxr_prov = {
 
 MXR_INI
 {
+    mxr_active_fabric = NULL;
+    mxr_cm_init();
 	return &mxr_prov;
 }
