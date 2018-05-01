@@ -32,26 +32,23 @@
 
 #include "mrail.h"
 
-#define MRAIL_DEFINE_GET_RAIL(txrx_rail)					\
-static inline size_t mrail_get_ ## txrx_rail(struct mrail_ep *mrail_ep)		\
-{										\
-	return (ofi_atomic_inc32(&mrail_ep->txrx_rail) - 1) % mrail_ep->num_eps;\
-}
-
-MRAIL_DEFINE_GET_RAIL(tx_rail)
-MRAIL_DEFINE_GET_RAIL(rx_rail)
-
 static ssize_t mrail_recv(struct fid_ep *ep_fid, void *buf, size_t len,
 			  void *desc, fi_addr_t src_addr, void *context)
 {
 	struct mrail_ep *mrail_ep = container_of(ep_fid, struct mrail_ep,
 					     util_ep.ep_fid.fid);
 	uint32_t rail = mrail_get_rx_rail(mrail_ep);
+	void *rail_desc = NULL;
 	ssize_t ret;
 
 	assert(!src_addr);
 
-	ret = fi_recv(mrail_ep->eps[rail], buf, len, desc, 0, context);
+	if (desc) {
+		struct mrail_mr *mrail_mr = desc;
+		rail_desc = fi_mr_desc(mrail_mr->mrs[rail]);
+	}
+
+	ret = fi_recv(mrail_ep->eps[rail], buf, len, rail_desc, 0, context);
 	if (ret) {
 		FI_WARN(&mrail_prov, FI_LOG_EP_DATA,
 			"Unable to post recv on rail: %" PRIu32 "\n", rail);
@@ -67,10 +64,28 @@ static ssize_t mrail_ep_sendmsg(struct fid_ep *ep_fid, const struct fi_msg *msg,
 					     util_ep.ep_fid.fid);
 	struct fi_msg rail_msg = *msg;
 	uint32_t rail = mrail_get_tx_rail(mrail_ep);
+	void **descs;
 	ssize_t ret;
+	size_t i;
 
 	rail_msg.addr = *(fi_addr_t *)ofi_av_get_addr(mrail_ep->util_ep.av,
 						      (int)msg->addr);
+
+	if (rail_msg.desc) {
+		descs = calloc(rail_msg.iov_count, sizeof(void *));
+		if (!descs) {
+			return -ENOMEM;
+		}
+
+		for (i=0; i<rail_msg.iov_count; ++i) {
+			struct mrail_mr *mrail_mr = rail_msg.desc[i];
+			if (mrail_mr) {
+				descs[i] = fi_mr_desc(mrail_mr->mrs[rail]);
+			}
+		}
+
+		rail_msg.desc = descs;
+	}
 
 	ret = fi_sendmsg(mrail_ep->eps[rail], &rail_msg, flags);
 	if (ret) {
@@ -89,12 +104,18 @@ static ssize_t mrail_send(struct fid_ep *ep_fid, const void *buf, size_t len,
 	fi_addr_t *rail_fi_addr = ofi_av_get_addr(mrail_ep->util_ep.av,
 						  (int)dest_addr);
 	uint32_t rail = mrail_get_tx_rail(mrail_ep);
+	void *rail_desc = NULL;
 	ssize_t ret;
 
 	assert(rail_fi_addr);
 
-	ret = fi_send(mrail_ep->eps[rail], buf, len, desc, rail_fi_addr[rail],
-		      context);
+	if (desc) {
+		struct mrail_mr *mrail_mr = desc;
+		rail_desc = fi_mr_desc(mrail_mr->mrs[rail]);
+	}
+
+	ret = fi_send(mrail_ep->eps[rail], buf, len, rail_desc,
+			rail_fi_addr[rail], context);
 	if (ret) {
 		FI_WARN(&mrail_prov, FI_LOG_EP_DATA,
 			"Unable to post send on rail: %" PRIu32 "\n", rail);
@@ -311,19 +332,6 @@ struct fi_ops_tagged mrail_ops_tagged = {
 	.injectdata = fi_no_tagged_injectdata,
 };
 
-struct fi_ops_rma mrail_ops_rma = {
-	.size = sizeof (struct fi_ops_rma),
-	.read = fi_no_rma_read,
-	.readv = fi_no_rma_readv,
-	.readmsg = fi_no_rma_readmsg,
-	.write = fi_no_rma_write,
-	.writev = fi_no_rma_writev,
-	.writemsg = fi_no_rma_writemsg,
-	.inject = fi_no_rma_inject,
-	.writedata = fi_no_rma_writedata,
-	.injectdata = fi_no_rma_injectdata,
-};
-
 int mrail_ep_open(struct fid_domain *domain_fid, struct fi_info *info,
 		  struct fid_ep **ep_fid, void *context)
 {
@@ -378,6 +386,7 @@ int mrail_ep_open(struct fid_domain *domain_fid, struct fi_info *info,
 
 	ofi_atomic_initialize32(&mrail_ep->tx_rail, 0);
 	ofi_atomic_initialize32(&mrail_ep->rx_rail, 0);
+	ofi_atomic_initialize32(&mrail_ep->rma_rail, 0);
 
 	*ep_fid = &mrail_ep->util_ep.ep_fid;
 	(*ep_fid)->fid.ops = &mrail_ep_fi_ops;

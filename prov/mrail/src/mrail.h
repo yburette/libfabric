@@ -62,6 +62,8 @@ extern struct fi_provider mrail_prov;
 extern struct util_prov mrail_util_prov;
 extern struct fi_fabric_attr mrail_fabric_attr;
 
+extern struct fi_ops_rma mrail_ops_rma;
+
 extern struct fi_info *mrail_info_vec[MRAIL_MAX_INFO];
 extern size_t mrail_num_info;
 
@@ -78,6 +80,18 @@ struct mrail_domain {
 	struct fid_domain **domains;
 	size_t num_domains;
 	size_t addrlen;
+};
+
+struct mrail_mr {
+	struct fid_mr mr_fid;
+	struct fid_mr **mrs;
+	size_t num_mrs;
+	uint64_t base_addr;
+};
+
+struct mrail_mr_map_raw {
+	uint64_t base_addr;
+	uint64_t *rkeys;
 };
 
 struct mrail_av {
@@ -101,6 +115,7 @@ struct mrail_ep {
 	size_t num_eps;
 	ofi_atomic32_t tx_rail;
 	ofi_atomic32_t rx_rail;
+	ofi_atomic32_t rma_rail;
 };
 
 int mrail_get_core_info(uint32_t version, const char *node, const char *service,
@@ -147,3 +162,13 @@ static inline int mrail_close_fids(struct fid **fids, size_t count)
 	}
 	return retv;
 }
+
+#define MRAIL_DEFINE_GET_RAIL(txrx_rail)					\
+static inline size_t mrail_get_ ## txrx_rail(struct mrail_ep *mrail_ep)		\
+{										\
+	return (ofi_atomic_inc32(&mrail_ep->txrx_rail) - 1) % mrail_ep->num_eps;\
+}
+
+MRAIL_DEFINE_GET_RAIL(tx_rail)
+MRAIL_DEFINE_GET_RAIL(rx_rail)
+MRAIL_DEFINE_GET_RAIL(rma_rail)
