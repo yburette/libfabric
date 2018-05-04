@@ -202,6 +202,7 @@ static int mrail_getinfo(uint32_t version, const char *node, const char *service
 	fi->ep_attr->protocol_version 	= mrail_info.ep_attr->protocol_version;
 	fi->fabric_attr->prov_version	= FI_VERSION(MRAIL_MAJOR_VERSION,
 						     MRAIL_MINOR_VERSION);
+	fi->domain_attr->mr_mode	|= FI_MR_RAW;
 	// TODO set src_addr to FI_ADDR_STRC address
 	fi->next = *info;
 	*info = fi;
