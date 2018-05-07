@@ -90,10 +90,10 @@ static int mrail_domain_control(struct fid *fid, int command, void *arg)
 			struct mrail_domain, util_domain.domain_fid.fid);
 
 	switch(command) {
-		case FI_MAP_RAW_MR:
-			return mrail_domain_map_raw(mrail_domain, arg);
-		case FI_UNMAP_KEY:
-			return mrail_domain_unmap_key(arg);
+	case FI_MAP_RAW_MR:
+		return mrail_domain_map_raw(mrail_domain, arg);
+	case FI_UNMAP_KEY:
+		return mrail_domain_unmap_key(arg);
 	}
 	return -FI_EINVAL;
 }
@@ -139,8 +139,8 @@ static int mrail_mr_control(struct fid *fid, int command, void *arg)
 			mr_fid.fid);
 
 	switch(command) {
-		case FI_GET_RAW_MR:
-			return mrail_mr_raw_attr(mrail_mr, arg);
+	case FI_GET_RAW_MR:
+		return mrail_mr_raw_attr(mrail_mr, arg);
 	}
 	return -FI_EINVAL;
 }
@@ -213,6 +213,29 @@ static struct fi_ops_mr mrail_domain_mr_ops = {
 	.regattr = fi_no_mr_regattr,
 };
 
+int mrail_cntr_open(struct fid_domain *domain, struct fi_cntr_attr *attr,
+		struct fid_cntr **cntr_fid, void *context)
+{
+	int ret;
+	struct util_cntr *cntr;
+
+	cntr = calloc(1, sizeof(*cntr));
+	if (!cntr)
+		return -FI_ENOMEM;
+
+	ret = ofi_cntr_init(&mrail_prov, domain, attr, cntr,
+			    &ofi_cntr_progress, context);
+	if (ret)
+		goto error;
+
+	*cntr_fid = &cntr->cntr_fid;
+	return FI_SUCCESS;
+
+error:
+	free(cntr);
+	return ret;
+}
+
 static struct fi_ops mrail_domain_fi_ops = {
 	.size = sizeof(struct fi_ops),
 	.close = mrail_domain_close,
@@ -227,7 +250,7 @@ static struct fi_ops_domain mrail_domain_ops = {
 	.cq_open = mrail_cq_open,
 	.endpoint = mrail_ep_open,
 	.scalable_ep = fi_no_scalable_ep,
-	.cntr_open = fi_no_cntr_open,
+	.cntr_open = mrail_cntr_open,
 	.poll_open = fi_no_poll_open,
 	.stx_ctx = fi_no_stx_context,
 	.srx_ctx = fi_no_srx_context,

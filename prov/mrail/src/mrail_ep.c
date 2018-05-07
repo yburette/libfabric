@@ -64,7 +64,6 @@ static ssize_t mrail_ep_sendmsg(struct fid_ep *ep_fid, const struct fi_msg *msg,
 					     util_ep.ep_fid.fid);
 	struct fi_msg rail_msg = *msg;
 	uint32_t rail = mrail_get_tx_rail(mrail_ep);
-	void **descs;
 	ssize_t ret;
 	size_t i;
 
@@ -72,7 +71,7 @@ static ssize_t mrail_ep_sendmsg(struct fid_ep *ep_fid, const struct fi_msg *msg,
 						      (int)msg->addr);
 
 	if (rail_msg.desc) {
-		descs = calloc(rail_msg.iov_count, sizeof(void *));
+		void **descs = calloc(rail_msg.iov_count, sizeof(void *));
 		if (!descs) {
 			return -ENOMEM;
 		}
