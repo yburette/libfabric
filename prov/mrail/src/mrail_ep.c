@@ -331,6 +331,16 @@ struct fi_ops_tagged mrail_ops_tagged = {
 	.injectdata = fi_no_tagged_injectdata,
 };
 
+void mrail_ep_progress(struct util_ep *ep)
+{
+	if (ep->tx_cq) {
+		mrail_cq_progress(ep->tx_cq, ep);
+	}
+	if (ep->rx_cq && (ep->rx_cq != ep->tx_cq)) {
+		mrail_cq_progress(ep->rx_cq, ep);
+	}
+}
+
 int mrail_ep_open(struct fid_domain *domain_fid, struct fi_info *info,
 		  struct fid_ep **ep_fid, void *context)
 {
@@ -360,8 +370,8 @@ int mrail_ep_open(struct fid_domain *domain_fid, struct fi_info *info,
 	mrail_ep->info = mrail_domain->info;
 	mrail_ep->num_eps = mrail_domain->num_domains;
 
-	ret = ofi_endpoint_init(domain_fid, &mrail_util_prov, info, &mrail_ep->util_ep,
-				context, NULL);
+	ret = ofi_endpoint_init(domain_fid, &mrail_util_prov, info,
+			&mrail_ep->util_ep, context, mrail_ep_progress);
 	if (ret) {
 		free(mrail_ep);
 		return ret;

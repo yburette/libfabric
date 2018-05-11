@@ -70,7 +70,106 @@ static struct fi_ops_cq mrail_cq_ops = {
 	.strerror = fi_no_cq_strerror,
 };
 
-static void mrail_cq_progress(struct util_cq *cq)
+static int handle_write_completion(struct mrail_cq *mrail_cq,
+		struct util_ep *ep, struct fi_cq_tagged_entry *comp)
+{
+	int ret;
+	struct mrail_req *req;
+	struct mrail_subreq *subreq;
+
+	subreq = comp->op_context;
+	req = subreq->parent;
+
+	req->remaining_comps--;
+
+	if (req->remaining_comps == 0) {
+		ret = ofi_cq_write(&mrail_cq->util_cq, req->op_context,
+				req->flags, req->len, req->buf, req->data,
+				req->tag);
+		if (ret) {
+			FI_WARN(&mrail_prov, FI_LOG_CQ,
+				"Cannot write to util cq\n");
+			goto error;
+		}
+
+		mrail_cntr_inc(ep->wr_cntr);
+
+		free(req);
+	}
+
+	free(subreq);
+
+	return FI_SUCCESS;
+error:
+	return ret;
+}
+
+static int handle_read_completion(struct mrail_cq *mrail_cq,
+		struct util_ep *ep, struct fi_cq_tagged_entry *comp)
+{
+	int ret;
+	struct mrail_req *req;
+	struct mrail_subreq *subreq;
+
+	subreq = comp->op_context;
+	req = subreq->parent;
+
+	req->remaining_comps--;
+
+	if (req->remaining_comps == 0) {
+		ret = ofi_cq_write(&mrail_cq->util_cq, req->op_context,
+				req->flags, req->len, req->buf, req->data,
+				req->tag);
+		if (ret) {
+			FI_WARN(&mrail_prov, FI_LOG_CQ,
+				"Cannot write to util cq\n");
+			goto error;
+		}
+
+		mrail_cntr_inc(ep->rd_cntr);
+
+		free(req);
+	}
+
+	free(subreq);
+
+	return FI_SUCCESS;
+error:
+	return ret;
+}
+
+static int handle_completion(struct mrail_cq *mrail_cq, struct util_ep *ep,
+		struct fi_cq_tagged_entry *comp)
+{
+	int ret;
+
+	if (comp->flags & FI_WRITE) {
+		return handle_write_completion(mrail_cq, ep, comp);
+	}
+	if (comp->flags & FI_READ) {
+		return handle_read_completion(mrail_cq, ep, comp);
+	}
+
+	ret = ofi_cq_write(&mrail_cq->util_cq, comp->op_context, comp->flags,
+			comp->len, comp->buf, comp->data, comp->tag);
+	if (ret) {
+		FI_WARN(&mrail_prov, FI_LOG_CQ,
+			"Cannot write to util cq\n");
+		goto error;
+	}
+
+	if (comp->flags & FI_TRANSMIT) {
+		mrail_cntr_inc(ep->tx_cntr);
+	}
+	if (comp->flags & FI_RECV) {
+		mrail_cntr_inc(ep->rx_cntr);
+	}
+	return FI_SUCCESS;
+error:
+	return ret;
+}
+
+void mrail_cq_progress(struct util_cq *cq, struct util_ep *ep)
 {
 	struct mrail_cq *mrail_cq;
 	struct fi_cq_tagged_entry comp;
@@ -88,11 +187,10 @@ static void mrail_cq_progress(struct util_cq *cq)
 				"Unable to read rail completion\n");
 			goto err;
 		}
-		ret = ofi_cq_write(cq, comp.op_context, comp.flags, comp.len,
-				   comp.buf, comp.data, comp.tag);
+		ret = handle_completion(mrail_cq, ep, &comp);
 		if (ret) {
 			FI_WARN(&mrail_prov, FI_LOG_CQ,
-				"Unable to write to util cq\n");
+				"Cannot handle completion: %d\n", ret);
 			goto err;
 		}
 	}
@@ -107,6 +205,7 @@ int mrail_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
 {
 	struct mrail_domain *mrail_domain;
 	struct mrail_cq *mrail_cq;
+	struct fi_cq_attr rail_attr;
 	size_t i;
 	int ret;
 
@@ -114,8 +213,8 @@ int mrail_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
 	if (!mrail_cq)
 		return -FI_ENOMEM;
 
-	ret = ofi_cq_init(&mrail_prov, domain, attr, &mrail_cq->util_cq, &mrail_cq_progress,
-			  context);
+	ret = ofi_cq_init(&mrail_prov, domain, attr, &mrail_cq->util_cq,
+			&ofi_cq_progress, context);
 	if (ret) {
 		free(mrail_cq);
 		return ret;
@@ -131,10 +230,17 @@ int mrail_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
 
 	mrail_cq->num_cqs = mrail_domain->num_domains;
 
+	/* Force cq format so that we can properly handle the completions */
+	/* TODO: see if there is a better way of doing this */
+	rail_attr = *attr;
+	rail_attr.format = FI_CQ_FORMAT_TAGGED;
+
 	for (i = 0; i < mrail_cq->num_cqs; i++) {
-		ret = fi_cq_open(mrail_domain->domains[i], attr, &mrail_cq->cqs[i], NULL);
+		ret = fi_cq_open(mrail_domain->domains[i], &rail_attr,
+				&mrail_cq->cqs[i], NULL);
 		if (ret) {
-			FI_WARN(&mrail_prov, FI_LOG_EP_CTRL, "Unable to open rail CQ\n");
+			FI_WARN(&mrail_prov, FI_LOG_EP_CTRL,
+				"Unable to open rail CQ\n");
 			goto err;
 		}
 

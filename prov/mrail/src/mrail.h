@@ -118,6 +118,21 @@ struct mrail_ep {
 	ofi_atomic32_t rma_rail;
 };
 
+struct mrail_req {
+	size_t remaining_comps;
+	void *op_context;
+	uint64_t flags;
+	size_t len;
+	void *buf;
+	uint64_t data;
+	uint64_t tag;
+};
+
+struct mrail_subreq {
+	struct fi_context context;
+	struct mrail_req *parent;
+};
+
 int mrail_get_core_info(uint32_t version, const char *node, const char *service,
 			uint64_t flags, const struct fi_info *hints,
 			struct fi_info **core_info);
@@ -172,3 +187,19 @@ static inline size_t mrail_get_ ## txrx_rail(struct mrail_ep *mrail_ep)		\
 MRAIL_DEFINE_GET_RAIL(tx_rail)
 MRAIL_DEFINE_GET_RAIL(rx_rail)
 MRAIL_DEFINE_GET_RAIL(rma_rail)
+
+static inline void mrail_cntr_inc(struct util_cntr *cntr)
+{
+	if (cntr) {
+		cntr->cntr_fid.ops->add(&cntr->cntr_fid, 1);
+	}
+}
+
+static inline void mrail_cntr_incerr(struct util_cntr *cntr)
+{
+	if (cntr) {
+		cntr->cntr_fid.ops->adderr(&cntr->cntr_fid, 1);
+	}
+}
+
+void mrail_cq_progress(struct util_cq *cq, struct util_ep *ep);
