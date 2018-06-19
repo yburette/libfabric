@@ -48,6 +48,8 @@
 
 #include <ofi.h>
 #include <ofi_util.h>
+#include <ofi_iov.h>
+#include <ofi_list.h>
 #include <ofi_proto.h>
 #include <ofi_prov.h>
 #include <ofi_enosys.h>
@@ -70,6 +72,8 @@ extern struct fi_fabric_attr mrail_fabric_attr;
 
 extern struct fi_info *mrail_info_vec[MRAIL_MAX_INFO];
 extern size_t mrail_num_info;
+
+extern struct fi_ops_rma mrail_ops_rma;
 
 struct mrail_match_attr {
 	fi_addr_t addr;
@@ -192,6 +196,9 @@ struct mrail_ep {
 	struct mrail_recv_fs	*recv_fs;
 	struct mrail_recv_queue recv_queue;
 	struct mrail_recv_queue trecv_queue;
+
+	struct util_buf_pool	*req_pool; 
+	struct slist		deferred_reqs;
 };
 
 struct mrail_addr_key {
@@ -271,3 +278,55 @@ static inline int mrail_close_fids(struct fid **fids, size_t count)
 	}
 	return retv;
 }
+
+static inline size_t mrail_get_tx_rail(struct mrail_ep *mrail_ep)
+{
+	return (ofi_atomic_inc32(&mrail_ep->tx_rail) - 1) % mrail_ep->num_eps;
+}
+
+struct mrail_subreq {
+	struct fi_context context;
+	struct mrail_req *parent;
+	void *descs[MRAIL_IOV_LIMIT];
+	struct iovec iov[MRAIL_IOV_LIMIT];
+	struct fi_rma_iov rma_iov[MRAIL_IOV_LIMIT];
+	size_t iov_count;
+	size_t rma_iov_count;
+};
+
+struct mrail_req {
+	struct slist_entry entry;
+	int op_type;
+	uint64_t flags;
+	uint64_t data;
+	struct mrail_ep *mrail_ep;
+	fi_addr_t* remote_addrs;
+	struct fi_cq_tagged_entry comp;
+	ofi_atomic32_t expected_subcomps;
+	int pending_subreq;
+	struct mrail_subreq subreqs[];
+};
+
+static inline
+struct mrail_req *mrail_alloc_req(struct mrail_ep *mrail_ep)
+{
+	struct mrail_req *req;
+
+	fastlock_acquire(&mrail_ep->util_ep.lock);
+	req = util_buf_alloc(mrail_ep->req_pool);
+	fastlock_release(&mrail_ep->util_ep.lock);
+
+	return req;
+}
+
+static inline
+void mrail_free_req(struct mrail_ep *mrail_ep, struct mrail_req *req)
+{
+	fastlock_acquire(&mrail_ep->util_ep.lock);
+	util_buf_release(mrail_ep->req_pool, req);
+	fastlock_release(&mrail_ep->util_ep.lock);
+}
+
+void mrail_progress_deferred_reqs(struct mrail_ep *mrail_ep);
+
+void mrail_poll_cq(struct util_cq *cq);
