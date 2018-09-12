@@ -233,13 +233,14 @@ void mrail_poll_cq(struct util_cq *cq)
 {
 	struct mrail_cq *mrail_cq;
 	struct fi_cq_tagged_entry comp;
+	fi_addr_t src_addr;
 	size_t i;
 	int ret;
 
 	mrail_cq = container_of(cq, struct mrail_cq, util_cq);
 
 	for (i = 0; i < mrail_cq->num_cqs; i++) {
-		ret = fi_cq_read(mrail_cq->cqs[i], &comp, 1);
+		ret = fi_cq_readfrom(mrail_cq->cqs[i], &comp, 1, &src_addr);
 		if (ret == -FI_EAGAIN || !ret)
 			continue;
 		if (ret < 0) {
