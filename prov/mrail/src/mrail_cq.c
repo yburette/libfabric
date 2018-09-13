@@ -119,7 +119,7 @@ static int mrail_cq_process_comp_buf_recv(struct mrail_ep *mrail_ep,
 	struct mrail_hdr *hdr = comp->buf;
 	struct mrail_recv *recv;
 
-	fastlock_acquire(&mrail_ep->util_ep.lock);
+	mrail_ep->lock_acquire(&mrail_ep->util_ep.lock);
 	if (hdr->op == ofi_op_msg) {
 		FI_DBG(&mrail_prov, FI_LOG_CQ, "Got MSG op\n");
 		// TODO pass the right address
@@ -135,7 +135,7 @@ static int mrail_cq_process_comp_buf_recv(struct mrail_ep *mrail_ep,
 						     (char *)comp, sizeof(*comp),
 						     NULL);
 	}
-	fastlock_release(&mrail_ep->util_ep.lock);
+	mrail_ep->lock_release(&mrail_ep->util_ep.lock);
 	if (OFI_UNLIKELY(!recv))
 		return 0;
 
