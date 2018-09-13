@@ -173,12 +173,20 @@ struct mrail_av {
 };
 
 struct mrail_peer_addr {
+	struct slist	early_recv_comps;
 	fi_addr_t	addr;
 	uint32_t	seq_no;
+	uint32_t	expected_seq_no;
 };
 
-typedef int (*mrail_cq_process_comp_func_t)(struct util_cq *cq,
-					    struct fi_cq_tagged_entry *comp);
+struct mrail_early_comp {
+	struct slist_entry 		entry;
+	struct fi_cq_tagged_entry 	comp;
+	uint32_t 			seq_no;
+};
+
+typedef int (*mrail_cq_process_comp_func_t)(struct fi_cq_tagged_entry *comp,
+					    fi_addr_t src_addr);
 struct mrail_cq {
 	struct util_cq 			util_cq;
 	struct fid_cq 			**cqs;
@@ -187,21 +195,22 @@ struct mrail_cq {
 };
 
 struct mrail_ep {
-	struct util_ep 		util_ep;
-	struct fi_info 		*info;
+	struct util_ep		util_ep;
+	struct fi_info		*info;
 	struct {
 		struct fid_ep 		*ep;
 		struct fi_info		*info;
-	} 			*rails;
-	size_t 			num_eps;
-	ofi_atomic32_t 		tx_rail;
-	ofi_atomic32_t 		rx_rail;
+	}			*rails;
+	size_t			num_eps;
+	ofi_atomic32_t		tx_rail;
+	ofi_atomic32_t		rx_rail;
 
 	struct mrail_recv_fs	*recv_fs;
 	struct mrail_recv_queue recv_queue;
 	struct mrail_recv_queue trecv_queue;
 
-	struct util_buf_pool	*req_pool; 
+	struct util_buf_pool	*req_pool;
+	struct util_buf_pool 	*early_comp_pool;
 	struct slist		deferred_reqs;
 
 	ofi_fastlock_acquire_t	lock_acquire;
@@ -337,3 +346,24 @@ void mrail_free_req(struct mrail_ep *mrail_ep, struct mrail_req *req)
 void mrail_progress_deferred_reqs(struct mrail_ep *mrail_ep);
 
 void mrail_poll_cq(struct util_cq *cq);
+
+static inline
+struct mrail_early_comp *mrail_alloc_early_comp(struct mrail_ep *mrail_ep)
+{
+	struct mrail_early_comp *comp;
+
+	mrail_ep->lock_acquire(&mrail_ep->util_ep.lock);
+	comp = util_buf_alloc(mrail_ep->early_comp_pool);
+	mrail_ep->lock_release(&mrail_ep->util_ep.lock);
+
+	return comp;
+}
+
+static inline
+void mrail_free_early_comp(struct mrail_ep *mrail_ep,
+			   struct mrail_early_comp *comp)
+{
+	mrail_ep->lock_acquire(&mrail_ep->util_ep.lock);
+	util_buf_release(mrail_ep->early_comp_pool, comp);
+	mrail_ep->lock_release(&mrail_ep->util_ep.lock);
+}

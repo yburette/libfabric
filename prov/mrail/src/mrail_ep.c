@@ -551,6 +551,7 @@ static int mrail_ep_close(fid_t fid)
 	size_t i;
 
 	util_buf_pool_destroy(mrail_ep->req_pool);
+	util_buf_pool_destroy(mrail_ep->early_comp_pool);
 	mrail_recv_fs_free(mrail_ep->recv_fs);
 
 	for (i = 0; i < mrail_ep->num_eps; i++) {
@@ -796,6 +797,13 @@ int mrail_ep_open(struct fid_domain *domain_fid, struct fi_info *info,
 	mrail_ep->recv_fs = mrail_recv_fs_create(rxq_total_size, mrail_init_recv,
 						 mrail_ep);
 	if (!mrail_ep->recv_fs) {
+		ret = -FI_ENOMEM;
+		goto err;
+	}
+
+	ret = util_buf_pool_create(&mrail_ep->early_comp_pool,
+			sizeof(struct mrail_early_comp), sizeof(void *), 0, 64);
+	if (!mrail_ep->early_comp_pool) {
 		ret = -FI_ENOMEM;
 		goto err;
 	}

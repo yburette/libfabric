@@ -113,33 +113,12 @@ out:
 	return retv;
 }
 
-static int mrail_cq_process_comp_buf_recv(struct util_cq *cq,
+static int mrail_cq_process_comp_buf_recv(struct mrail_ep *mrail_ep,
 					  struct fi_cq_tagged_entry *comp)
 {
-	struct fi_recv_context *recv_ctx;
-	struct mrail_ep *mrail_ep;
-	struct mrail_hdr *hdr;
+	struct mrail_hdr *hdr = comp->buf;
 	struct mrail_recv *recv;
-	int ret;
 
-	if (comp->flags & FI_CLAIM) {
-		recv = comp->op_context;
-		assert(recv->hdr.version == MRAIL_HDR_VERSION);
-		ret =  mrail_cq_write_recv_comp(recv->ep, &recv->hdr, comp,
-						recv->context);
-		mrail_push_recv(recv);
-		return ret;
-	}
-
-	recv_ctx = comp->op_context;
-	mrail_ep = recv_ctx->ep->fid.context;
-	hdr = comp->buf;
-
-	// TODO make rxm send buffered recv amount of data for large message
-	assert(hdr->version == MRAIL_HDR_VERSION);
-
-	// TODO match seq number
-	FI_DBG(&mrail_prov, FI_LOG_CQ, "received seq=%d\n", ntohl(hdr->seq));
 	fastlock_acquire(&mrail_ep->util_ep.lock);
 	if (hdr->op == ofi_op_msg) {
 		FI_DBG(&mrail_prov, FI_LOG_CQ, "Got MSG op\n");
@@ -161,6 +140,140 @@ static int mrail_cq_process_comp_buf_recv(struct util_cq *cq,
 		return 0;
 
 	return mrail_cq_process_buf_recv(comp, recv);
+}
+
+static
+struct mrail_early_comp *mrail_peer_get_next(struct mrail_peer_addr *peer_addr)
+{
+	struct slist *queue = &peer_addr->early_recv_comps;
+	struct mrail_early_comp *early_comp;
+
+	if (!slist_empty(queue)) {
+		early_comp = container_of(queue->head, struct
+				mrail_early_comp, entry);
+		if (early_comp->seq_no == peer_addr->expected_seq_no) {
+			slist_remove_head(queue);
+			peer_addr->expected_seq_no++;
+			return early_comp;
+		}
+	}
+	return NULL;
+}
+
+static int mrail_process_early_comps(struct mrail_ep *mrail_ep,
+				     struct mrail_peer_addr *peer_addr)
+{
+	struct mrail_early_comp *early_comp;
+	int ret;
+
+	while ((early_comp = mrail_peer_get_next(peer_addr))) {
+		FI_DBG(&mrail_prov, FI_LOG_CQ, "found early_comp seq=%d\n",
+				early_comp->seq_no);
+		ret = mrail_cq_process_comp_buf_recv(mrail_ep,
+				&early_comp->comp);
+		if (ret)
+			return ret;
+		mrail_free_early_comp(mrail_ep, early_comp);
+	}
+
+	return 0;
+}
+
+static int mrail_early_comp_before(struct slist_entry *item, const void *arg)
+{
+	struct mrail_early_comp *early_comp;
+	struct mrail_early_comp *new_comp;
+
+	/* Check whether the given item's follower has a higher seq_no. */
+
+	if (!item->next) {
+		/* item is the last element in the list */
+		return 0;
+	}
+
+	early_comp = container_of(item->next, struct mrail_early_comp, entry);
+	new_comp = container_of((struct slist_entry *)arg,
+			struct mrail_early_comp, entry);
+
+	return (new_comp->seq_no < early_comp->seq_no);
+}
+
+static void mrail_save_early_comp(struct mrail_ep *mrail_ep,
+				  struct mrail_peer_addr *peer_addr,
+				  uint32_t seq_no,
+				  struct fi_cq_tagged_entry *comp)
+{
+	struct slist *queue = &peer_addr->early_recv_comps;
+	struct mrail_early_comp *early_comp;
+
+	early_comp = mrail_alloc_early_comp(mrail_ep);
+	if (!early_comp) {
+		FI_WARN(&mrail_prov, FI_LOG_CQ, "Cannot allocate early_comp\n");
+		assert(0);
+	}
+	early_comp->seq_no = seq_no;
+	memcpy(&early_comp->comp, comp, sizeof(*comp));
+
+	slist_insert_order(queue, mrail_early_comp_before, &early_comp->entry);
+
+	FI_DBG(&mrail_prov, FI_LOG_CQ, "saved early_comp seq=%d\n", seq_no);
+}
+
+static int mrail_handle_recv_completion(struct fi_cq_tagged_entry *comp,
+					fi_addr_t src_addr)
+{
+	struct fi_recv_context *recv_ctx;
+	struct mrail_peer_addr *peer_addr;
+	struct mrail_ep *mrail_ep;
+	struct mrail_recv *recv;
+	struct mrail_hdr *hdr;
+	uint32_t seq_no;
+	int ret;
+
+	if (comp->flags & FI_CLAIM) {
+		/* This message has already been processed and claimed.
+		 * See mrail_cq_process_buf_recv().
+		 */
+		recv = comp->op_context;
+		assert(recv->hdr.version == MRAIL_HDR_VERSION);
+		ret =  mrail_cq_write_recv_comp(recv->ep, &recv->hdr, comp,
+						recv->context);
+		mrail_push_recv(recv);
+		goto exit;
+	}
+
+	recv_ctx = comp->op_context;
+	mrail_ep = recv_ctx->ep->fid.context;
+	hdr = comp->buf;
+
+	// TODO make rxm send buffered recv amount of data for large message
+	assert(hdr->version == MRAIL_HDR_VERSION);
+
+	seq_no = ntohl(hdr->seq);
+	peer_addr = ofi_av_get_addr(mrail_ep->util_ep.av, (int) src_addr);
+	FI_DBG(&mrail_prov, FI_LOG_CQ,
+			"ep=%p peer=%d received seq=%d, expected=%d\n",
+			mrail_ep, (int)peer_addr->addr, seq_no,
+			peer_addr->expected_seq_no);
+	// TODO: make this thread-safe
+	if (seq_no == peer_addr->expected_seq_no) {
+		/* This message was received in order */
+		ret = mrail_cq_process_comp_buf_recv(mrail_ep, comp);
+		if (ret)
+			goto exit;
+		peer_addr->expected_seq_no++;
+
+		/* Process any next-in-order message that had already arrived */
+		ret = mrail_process_early_comps(mrail_ep, peer_addr);
+	} else {
+		/* This message was received early.
+		 * Save it into the early recv comps queue.
+		 */
+		mrail_save_early_comp(mrail_ep, peer_addr, seq_no, comp);
+	}
+	ret = 0;
+exit:
+	return ret;
 }
 
 static int mrail_cq_close(fid_t fid)
@@ -251,7 +364,7 @@ void mrail_poll_cq(struct util_cq *cq)
 		}
 		// TODO handle variable length message
 		if (comp.flags & FI_RECV) {
-			ret = mrail_cq->process_comp(cq, &comp);
+			ret = mrail_cq->process_comp(&comp, src_addr);
 			if (ret)
 				goto err;
 		} else if (comp.flags & (FI_READ | FI_WRITE)) {
@@ -328,7 +441,7 @@ int mrail_cq_open(struct fid_domain *domain, struct fi_cq_attr *attr,
 	}
 
 	// TODO add regular process comp when FI_BUFFERED_RECV not set
-	mrail_cq->process_comp = mrail_cq_process_comp_buf_recv;
+	mrail_cq->process_comp = mrail_handle_recv_completion;
 
 	*cq_fid = &mrail_cq->util_cq.cq_fid;
 	(*cq_fid)->fid.ops = &mrail_cq_fi_ops;

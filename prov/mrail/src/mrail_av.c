@@ -82,6 +82,7 @@ static int mrail_av_insert(struct fid_av *av_fid, const void *addr, size_t count
 	peer_addr = calloc(1, mrail_av->util_av.addrlen);
 	if (!peer_addr)
 		return -FI_ENOMEM;
+	slist_init(&peer_addr->early_recv_comps);
 
 	for (i = 0; i < count; i++) {
 		offset = i * mrail_domain->addrlen;
