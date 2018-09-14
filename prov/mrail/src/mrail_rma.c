@@ -79,7 +79,7 @@ static ssize_t mrail_post_subreq(uint32_t rail,
 	msg.msg_iov		= rail_iov;
 	msg.desc		= rail_descs;
 	msg.iov_count		= subreq->iov_count;
-	msg.addr		= req->peer_addr->addr;
+	msg.addr		= req->peer_info->addr;
 	msg.rma_iov		= rail_rma_iov;
 	msg.rma_iov_count	= subreq->rma_iov_count;
 	msg.context		= &subreq->context;
@@ -265,7 +265,7 @@ static ssize_t mrail_init_rma_req(struct mrail_ep *mrail_ep,
 	req->flags		= flags;
 	req->data		= msg->data;
 	req->mrail_ep		= mrail_ep;
-	req->peer_addr		= ofi_av_get_addr(mrail_ep->util_ep.av,
+	req->peer_info		= ofi_av_get_addr(mrail_ep->util_ep.av,
 						 (int) msg->addr);
 	req->comp.op_context	= msg->context;
 	req->comp.flags		= flags;

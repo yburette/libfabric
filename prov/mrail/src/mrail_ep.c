@@ -311,18 +311,18 @@ mrail_send_common(struct fid_ep *ep_fid, const struct iovec *iov, void **desc,
 {
 	struct mrail_ep *mrail_ep = container_of(ep_fid, struct mrail_ep,
 						 util_ep.ep_fid.fid);
-	struct mrail_peer_addr *peer_addr;
+	struct mrail_peer_info *peer_info;
 	struct iovec *iov_dest = alloca(sizeof(*iov_dest) * (count + 1));
 	struct mrail_hdr hdr = MRAIL_HDR_INITIALIZER_MSG;
 	uint32_t i = mrail_get_tx_rail(mrail_ep);
 	struct fi_msg msg;
 	ssize_t ret;
 
-	peer_addr = ofi_av_get_addr(mrail_ep->util_ep.av, (int) dest_addr);
+	peer_info = ofi_av_get_addr(mrail_ep->util_ep.av, (int) dest_addr);
 
 	mrail_ep->lock_acquire(&mrail_ep->util_ep.lock);
 
-	hdr.seq = peer_addr->seq_no++;
+	hdr.seq = peer_info->seq_no++;
 	FI_DBG(&mrail_prov, FI_LOG_EP_DATA, "sending seq=%d\n", hdr.seq);
 	hdr.seq = htonl(hdr.seq);
 	mrail_copy_iov_hdr(&hdr, iov_dest, iov, count);
@@ -343,7 +343,7 @@ mrail_send_common(struct fid_ep *ep_fid, const struct iovec *iov, void **desc,
 	if (ret) {
 		FI_WARN(&mrail_prov, FI_LOG_EP_DATA,
 			"Unable to fi_sendmsg on rail: %" PRIu32 "\n", i);
-		peer_addr->seq_no--;
+		peer_info->seq_no--;
 	}
 
 	mrail_ep->lock_release(&mrail_ep->util_ep.lock);
@@ -357,18 +357,18 @@ mrail_tsend_common(struct fid_ep *ep_fid, const struct iovec *iov, void **desc,
 {
 	struct mrail_ep *mrail_ep = container_of(ep_fid, struct mrail_ep,
 						 util_ep.ep_fid.fid);
-	struct mrail_peer_addr *peer_addr;
+	struct mrail_peer_info *peer_info;
 	struct iovec *iov_dest = alloca(sizeof(*iov_dest) * (count + 1));
 	struct mrail_hdr hdr = MRAIL_HDR_INITIALIZER_TAGGED(tag);
 	uint32_t i = mrail_get_tx_rail(mrail_ep);
 	struct fi_msg msg;
 	ssize_t ret;
 
-	peer_addr = ofi_av_get_addr(mrail_ep->util_ep.av, (int) dest_addr);
+	peer_info = ofi_av_get_addr(mrail_ep->util_ep.av, (int) dest_addr);
 
 	mrail_ep->lock_acquire(&mrail_ep->util_ep.lock);
 
-	hdr.seq = peer_addr->seq_no++;
+	hdr.seq = peer_info->seq_no++;
 	FI_DBG(&mrail_prov, FI_LOG_EP_DATA, "sending seq=%d\n", hdr.seq);
 	hdr.seq = htonl(hdr.seq);
 	mrail_copy_iov_hdr(&hdr, iov_dest, iov, count);
@@ -390,7 +390,7 @@ mrail_tsend_common(struct fid_ep *ep_fid, const struct iovec *iov, void **desc,
 	if (ret) {
 		FI_WARN(&mrail_prov, FI_LOG_EP_DATA,
 			"Unable to fi_sendmsg on rail: %" PRIu32 "\n", i);
-		peer_addr->seq_no--;
+		peer_info->seq_no--;
 	}
 
 	mrail_ep->lock_release(&mrail_ep->util_ep.lock);

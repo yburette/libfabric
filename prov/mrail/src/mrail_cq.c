@@ -143,17 +143,17 @@ static int mrail_cq_process_comp_buf_recv(struct mrail_ep *mrail_ep,
 }
 
 static
-struct mrail_early_comp *mrail_peer_get_next(struct mrail_peer_addr *peer_addr)
+struct mrail_early_comp *mrail_peer_get_next(struct mrail_peer_info *peer_info)
 {
-	struct slist *queue = &peer_addr->early_recv_comps;
+	struct slist *queue = &peer_info->early_recv_comps;
 	struct mrail_early_comp *early_comp;
 
 	if (!slist_empty(queue)) {
 		early_comp = container_of(queue->head, struct
 				mrail_early_comp, entry);
-		if (early_comp->seq_no == peer_addr->expected_seq_no) {
+		if (early_comp->seq_no == peer_info->expected_seq_no) {
 			slist_remove_head(queue);
-			peer_addr->expected_seq_no++;
+			peer_info->expected_seq_no++;
 			return early_comp;
 		}
 	}
@@ -161,12 +161,12 @@ struct mrail_early_comp *mrail_peer_get_next(struct mrail_peer_addr *peer_addr)
 }
 
 static int mrail_process_early_comps(struct mrail_ep *mrail_ep,
-				     struct mrail_peer_addr *peer_addr)
+				     struct mrail_peer_info *peer_info)
 {
 	struct mrail_early_comp *early_comp;
 	int ret;
 
-	while ((early_comp = mrail_peer_get_next(peer_addr))) {
+	while ((early_comp = mrail_peer_get_next(peer_info))) {
 		FI_DBG(&mrail_prov, FI_LOG_CQ, "found early_comp seq=%d\n",
 				early_comp->seq_no);
 		ret = mrail_cq_process_comp_buf_recv(mrail_ep,
@@ -199,11 +199,11 @@ static int mrail_early_comp_before(struct slist_entry *item, const void *arg)
 }
 
 static void mrail_save_early_comp(struct mrail_ep *mrail_ep,
-				  struct mrail_peer_addr *peer_addr,
+				  struct mrail_peer_info *peer_info,
 				  uint32_t seq_no,
 				  struct fi_cq_tagged_entry *comp)
 {
-	struct slist *queue = &peer_addr->early_recv_comps;
+	struct slist *queue = &peer_info->early_recv_comps;
 	struct mrail_early_comp *early_comp;
 
 	early_comp = mrail_alloc_early_comp(mrail_ep);
@@ -223,7 +223,7 @@ static int mrail_handle_recv_completion(struct fi_cq_tagged_entry *comp,
 					fi_addr_t src_addr)
 {
 	struct fi_recv_context *recv_ctx;
-	struct mrail_peer_addr *peer_addr;
+	struct mrail_peer_info *peer_info;
 	struct mrail_ep *mrail_ep;
 	struct mrail_recv *recv;
 	struct mrail_hdr *hdr;
@@ -250,26 +250,26 @@ static int mrail_handle_recv_completion(struct fi_cq_tagged_entry *comp,
 	assert(hdr->version == MRAIL_HDR_VERSION);
 
 	seq_no = ntohl(hdr->seq);
-	peer_addr = ofi_av_get_addr(mrail_ep->util_ep.av, (int) src_addr);
+	peer_info = ofi_av_get_addr(mrail_ep->util_ep.av, (int) src_addr);
 	FI_DBG(&mrail_prov, FI_LOG_CQ,
 			"ep=%p peer=%d received seq=%d, expected=%d\n",
-			mrail_ep, (int)peer_addr->addr, seq_no,
-			peer_addr->expected_seq_no);
+			mrail_ep, (int)peer_info->addr, seq_no,
+			peer_info->expected_seq_no);
 	// TODO: make this thread-safe
-	if (seq_no == peer_addr->expected_seq_no) {
+	if (seq_no == peer_info->expected_seq_no) {
 		/* This message was received in order */
 		ret = mrail_cq_process_comp_buf_recv(mrail_ep, comp);
 		if (ret)
 			goto exit;
-		peer_addr->expected_seq_no++;
+		peer_info->expected_seq_no++;
 
 		/* Process any next-in-order message that had already arrived */
-		ret = mrail_process_early_comps(mrail_ep, peer_addr);
+		ret = mrail_process_early_comps(mrail_ep, peer_info);
 	} else {
 		/* This message was received early.
 		 * Save it into the early recv comps queue.
 		 */
-		mrail_save_early_comp(mrail_ep, peer_addr, seq_no, comp);
+		mrail_save_early_comp(mrail_ep, peer_info, seq_no, comp);
 	}
 	ret = 0;
 exit:

@@ -172,7 +172,7 @@ struct mrail_av {
 	ofi_atomic32_t index;
 };
 
-struct mrail_peer_addr {
+struct mrail_peer_info {
 	struct slist	early_recv_comps;
 	fi_addr_t	addr;
 	uint32_t	seq_no;
@@ -315,7 +315,7 @@ struct mrail_req {
 	uint64_t flags;
 	uint64_t data;
 	struct mrail_ep *mrail_ep;
-	struct mrail_peer_addr *peer_addr;
+	struct mrail_peer_info *peer_info;
 	struct fi_cq_tagged_entry comp;
 	ofi_atomic32_t expected_subcomps;
 	int op_type;
